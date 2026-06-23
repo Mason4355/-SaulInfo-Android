@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
     private val startUrl: Uri by lazy { Uri.parse(normalizeUrl(BuildConfig.CABINET_URL)) }
     private val allowedHost: String by lazy { startUrl.host.orEmpty().lowercase(Locale.US) }
     private val appApiKey: String by lazy { BuildConfig.ANDROID_APP_API_KEY.trim() }
+    private var updateDialogShown = false
 
     private val filePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
@@ -360,6 +361,18 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         json.optString("name").takeIf { it.isNotBlank() }
                     }
+                    if (appApiKey.isNotBlank()) {
+                        val latestVersionCode = json.optInt("latest_version_code", BuildConfig.VERSION_CODE)
+                        val latestVersionName = json.optString("latest_version_name").takeIf { it.isNotBlank() }
+                        val apkUrl = json.optString("apk_url").takeIf { it.startsWith("https://") }
+                        val updateRequired = json.optBoolean("update_required", false)
+                        val updateNotes = json.optString("update_notes").takeIf { it.isNotBlank() }
+                        if (latestVersionCode > BuildConfig.VERSION_CODE && apkUrl != null) {
+                            runOnUiThread {
+                                showAppUpdateDialog(latestVersionName, updateNotes, apkUrl, updateRequired)
+                            }
+                        }
+                    }
                     if (name != null) {
                         runOnUiThread {
                             title = name
@@ -372,5 +385,48 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { title = BuildConfig.APP_DISPLAY_NAME }
             }
         }.start()
+    }
+
+    private fun showAppUpdateDialog(
+        versionName: String?,
+        notes: String?,
+        apkUrl: String,
+        required: Boolean,
+    ) {
+        if (updateDialogShown || isFinishing) return
+        updateDialogShown = true
+        val message = buildString {
+            append("Доступна новая версия приложения")
+            versionName?.let { append(" ").append(it) }
+            append(".")
+            if (!notes.isNullOrBlank()) {
+                append("\n\n").append(notes)
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Новая версия приложения")
+            .setMessage(message)
+            .setPositiveButton("Скачать APK") { _, _ -> downloadUpdateApk(apkUrl) }
+            .apply {
+                if (!required) {
+                    setNegativeButton("Позже", null)
+                }
+            }
+            .setCancelable(!required)
+            .show()
+    }
+
+    private fun downloadUpdateApk(apkUrl: String) {
+        val uri = Uri.parse(apkUrl)
+        val request = DownloadManager.Request(uri)
+            .setMimeType("application/vnd.android.package-archive")
+            .setTitle("${BuildConfig.APP_DISPLAY_NAME}.apk")
+            .setDescription("Загрузка новой версии приложения")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(
+                Environment.DIRECTORY_DOWNLOADS,
+                URLUtil.guessFileName(apkUrl, null, "application/vnd.android.package-archive"),
+            )
+        (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
     }
 }

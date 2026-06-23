@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
 
     steps:
       - name: Checkout
@@ -51,17 +53,17 @@ jobs:
           ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
 
       - name: Prepare release keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.HAS_RELEASE_KEY == 'true'
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/saulinfo-release.jks"
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
       - name: Build release APK and AAB
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.HAS_RELEASE_KEY == 'true'
         run: |
           gradle :android-app:assembleRelease :android-app:bundleRelease \
-            -PcabinetUrl="$CABINET_URL" \
+            -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
             -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
             -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}" \
             -PSAULINFO_KEYSTORE_FILE="$RUNNER_TEMP/saulinfo-release.jks"
@@ -80,7 +82,7 @@ jobs:
           path: android-app/build/outputs/apk/debug/*.apk
 
       - name: Upload release artifacts
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.HAS_RELEASE_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: android-release

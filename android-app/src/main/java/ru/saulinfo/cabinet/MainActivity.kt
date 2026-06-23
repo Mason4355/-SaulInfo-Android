@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val startUrl: Uri by lazy { Uri.parse(normalizeUrl(BuildConfig.CABINET_URL)) }
     private val allowedHost: String by lazy { startUrl.host.orEmpty().lowercase(Locale.US) }
+    private val appApiKey: String by lazy { BuildConfig.ANDROID_APP_API_KEY.trim() }
 
     private val filePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
@@ -336,16 +337,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateTitleFromApi() {
-        val brandingUrl = startUrl.buildUpon().path("/api/cabinet/branding").build().toString()
+        val apiUrl = if (appApiKey.isNotBlank()) {
+            startUrl.buildUpon().path("/api/cabinet/mobile/config").build().toString()
+        } else {
+            startUrl.buildUpon().path("/api/cabinet/branding").build().toString()
+        }
         Thread {
             try {
-                val connection = URL(brandingUrl).openConnection() as HttpURLConnection
+                val connection = URL(apiUrl).openConnection() as HttpURLConnection
                 connection.connectTimeout = 5_000
                 connection.readTimeout = 5_000
                 connection.requestMethod = "GET"
+                if (appApiKey.isNotBlank()) {
+                    connection.setRequestProperty("X-SaulInfo-App-Key", appApiKey)
+                }
                 if (connection.responseCode in 200..299) {
                     val body = connection.inputStream.bufferedReader().use { it.readText() }
-                    val name = JSONObject(body).optString("name").takeIf { it.isNotBlank() }
+                    val json = JSONObject(body)
+                    val name = if (appApiKey.isNotBlank()) {
+                        json.optString("app_name").takeIf { it.isNotBlank() }
+                            ?: json.optJSONObject("branding")?.optString("name")?.takeIf { it.isNotBlank() }
+                    } else {
+                        json.optString("name").takeIf { it.isNotBlank() }
+                    }
                     if (name != null) {
                         runOnUiThread {
                             title = name

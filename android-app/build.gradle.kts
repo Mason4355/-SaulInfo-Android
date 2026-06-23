@@ -38,6 +38,7 @@ fun secretValue(name: String): String? {
 val appId = configValue("androidApplicationId", "ru.saulinfo.cabinet")
 val appName = configValue("androidAppName", "SaulInfo")
 val cabinetUrl = configValue("cabinetUrl", "https://example.com/")
+val androidAppApiKey = configValue("androidAppApiKey", "")
 val allowDomainChange = configValue("allowDomainChange", "false").toBooleanStrictOrNull() ?: false
 val debugWebView = configValue("debugWebView", "true").toBooleanStrictOrNull() ?: true
 
@@ -67,6 +68,7 @@ android {
 
         buildConfigField("String", "CABINET_URL", buildConfigString(cabinetUrl))
         buildConfigField("String", "APP_DISPLAY_NAME", buildConfigString(appName))
+        buildConfigField("String", "ANDROID_APP_API_KEY", buildConfigString(androidAppApiKey))
         buildConfigField("Boolean", "ALLOW_DOMAIN_CHANGE", allowDomainChange.toString())
         resValue("string", "app_name", resString(appName))
     }

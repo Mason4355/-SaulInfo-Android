@@ -46,9 +46,11 @@ jobs:
           gradle :android-app:assembleDebug \
             -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
             -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
-            -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}"
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}" \
+            -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}"
         env:
           CABINET_URL: ${{ secrets.CABINET_URL }}
+          ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY }}
           ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME }}
           ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
 
@@ -66,9 +68,11 @@ jobs:
             -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
             -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
             -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}" \
+            -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}" \
             -PSAULINFO_KEYSTORE_FILE="$RUNNER_TEMP/saulinfo-release.jks"
         env:
           CABINET_URL: ${{ secrets.CABINET_URL }}
+          ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY }}
           ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME }}
           ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
           SAULINFO_KEYSTORE_PASSWORD: ${{ secrets.SAULINFO_KEYSTORE_PASSWORD }}

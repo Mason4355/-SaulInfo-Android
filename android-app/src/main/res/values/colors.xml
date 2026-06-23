@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="saul_primary">#2563EB</color>
+    <color name="saul_on_primary">#FFFFFF</color>
+    <color name="saul_background">#FFFFFF</color>
+    <color name="saul_on_background">#111827</color>
+</resources>

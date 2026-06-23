@@ -1,0 +1,89 @@
+name: Android build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android-app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/android-build.yml"
+  pull_request:
+    paths:
+      - "android-app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Build debug APK
+        run: |
+          gradle :android-app:assembleDebug \
+            -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
+            -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}"
+        env:
+          CABINET_URL: ${{ secrets.CABINET_URL }}
+          ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME }}
+          ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
+
+      - name: Prepare release keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/saulinfo-release.jks"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - name: Build release APK and AAB
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          gradle :android-app:assembleRelease :android-app:bundleRelease \
+            -PcabinetUrl="$CABINET_URL" \
+            -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}" \
+            -PSAULINFO_KEYSTORE_FILE="$RUNNER_TEMP/saulinfo-release.jks"
+        env:
+          CABINET_URL: ${{ secrets.CABINET_URL }}
+          ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME }}
+          ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
+          SAULINFO_KEYSTORE_PASSWORD: ${{ secrets.SAULINFO_KEYSTORE_PASSWORD }}
+          SAULINFO_KEY_ALIAS: ${{ secrets.SAULINFO_KEY_ALIAS }}
+          SAULINFO_KEY_PASSWORD: ${{ secrets.SAULINFO_KEY_PASSWORD }}
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: android-app/build/outputs/apk/debug/*.apk
+
+      - name: Upload release artifacts
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: |
+            android-app/build/outputs/apk/release/*.apk
+            android-app/build/outputs/bundle/release/*.aab

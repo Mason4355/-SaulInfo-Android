@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.SaulInfoCabinet" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/saul_primary</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
         <item name="colorPrimary">@color/saul_primary</item>
         <item name="colorOnPrimary">@color/saul_on_primary</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

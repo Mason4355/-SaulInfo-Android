@@ -45,6 +45,10 @@ android {
     namespace = "ru.saulinfo.cabinet"
     compileSdk = 35
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = appId
         minSdk = 26

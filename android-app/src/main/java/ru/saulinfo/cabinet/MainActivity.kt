@@ -19,6 +19,7 @@ import android.provider.Settings
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
+import android.webkit.JavascriptInterface
 import android.webkit.JsResult
 import android.webkit.SslErrorHandler
 import android.webkit.URLUtil
@@ -42,6 +43,7 @@ import androidx.core.view.isVisible
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.google.android.material.color.DynamicColors
+import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -83,6 +85,9 @@ class MainActivity : AppCompatActivity() {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.WEBVIEW_DEBUGGING)
         configureWebView()
         configureBackButton()
+        NotificationChannels.ensure(this)
+        requestNotificationPermission()
+        fetchFcmToken()
 
         if (savedInstanceState == null) {
             reloadCabinet()
@@ -129,6 +134,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = CabinetWebViewClient()
         webView.webChromeClient = CabinetWebChromeClient()
+        webView.addJavascriptInterface(AndroidPushBridge(), "SaulInfoAndroidPush")
         webView.setDownloadListener(CabinetDownloadListener())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
@@ -145,6 +151,27 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1002)
+        }
+    }
+
+    private fun fetchFcmToken() {
+        try {
+            FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                if (!token.isNullOrBlank()) {
+                    PushTokenRegistrar.saveFcmToken(this, token)
+                    PushTokenRegistrar.registerSavedToken(this)
+                }
+            }
+        } catch (_: Exception) {
+            // Firebase push is active only when google-services.json is provided for the installation.
+        }
     }
 
     private fun reloadCabinet() {
@@ -245,6 +272,7 @@ class MainActivity : AppCompatActivity() {
             progress.isVisible = false
             CookieManager.getInstance().flush()
             injectAndroidHints()
+            injectPushRegistration()
             updateTitleFromApi()
         }
 
@@ -335,6 +363,37 @@ class MainActivity : AppCompatActivity() {
             }
         """.trimIndent()
         webView.evaluateJavascript(script, null)
+    }
+
+    private fun injectPushRegistration() {
+        val script = """
+            (function() {
+              try {
+                var token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token') || '';
+                if (token && window.SaulInfoAndroidPush && window.SaulInfoAndroidPush.registerAccessToken) {
+                  window.SaulInfoAndroidPush.registerAccessToken(token);
+                }
+              } catch (e) {}
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script, null)
+    }
+
+    private inner class AndroidPushBridge {
+        @JavascriptInterface
+        fun registerAccessToken(accessToken: String) {
+            if (accessToken.isBlank()) return
+            PushTokenRegistrar.saveAccessToken(this@MainActivity, accessToken)
+            try {
+                FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                    if (!token.isNullOrBlank()) {
+                        PushTokenRegistrar.register(this@MainActivity, accessToken, token)
+                    }
+                }
+            } catch (_: Exception) {
+                PushTokenRegistrar.registerSavedToken(this@MainActivity)
+            }
+        }
     }
 
     private fun updateTitleFromApi() {

@@ -43,8 +43,10 @@ val appId = configValue("androidApplicationId", "ru.saulinfo.cabinet")
 val appName = configValue("androidAppName", "SaulInfo")
 val cabinetUrl = configValue("cabinetUrl", "https://example.com/")
 val androidAppApiKey = configValue("androidAppApiKey", "")
+val androidPushTopic = configValue("androidPushTopic", "broadcasts")
 val allowDomainChange = configValue("allowDomainChange", "false").toBooleanStrictOrNull() ?: false
 val debugWebView = configValue("debugWebView", "true").toBooleanStrictOrNull() ?: true
+val debugApplicationIdSuffix = configValue("debugApplicationIdSuffix", "")
 
 android {
     namespace = "ru.saulinfo.cabinet"
@@ -73,6 +75,7 @@ android {
         buildConfigField("String", "CABINET_URL", buildConfigString(cabinetUrl))
         buildConfigField("String", "APP_DISPLAY_NAME", buildConfigString(appName))
         buildConfigField("String", "ANDROID_APP_API_KEY", buildConfigString(androidAppApiKey))
+        buildConfigField("String", "ANDROID_PUSH_TOPIC", buildConfigString(androidPushTopic))
         buildConfigField("Boolean", "ALLOW_DOMAIN_CHANGE", allowDomainChange.toString())
         resValue("string", "app_name", resString(appName))
     }
@@ -91,7 +94,9 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
+            if (debugApplicationIdSuffix.isNotBlank()) {
+                applicationIdSuffix = debugApplicationIdSuffix
+            }
             versionNameSuffix = "-debug"
             buildConfigField("Boolean", "WEBVIEW_DEBUGGING", debugWebView.toString())
         }

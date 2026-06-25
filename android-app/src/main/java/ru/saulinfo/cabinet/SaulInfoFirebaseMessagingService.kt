@@ -11,10 +11,12 @@ class SaulInfoFirebaseMessagingService : FirebaseMessagingService() {
     override fun onCreate() {
         super.onCreate()
         NotificationChannels.ensure(this)
+        PushTokenRegistrar.subscribeToBroadcastTopic()
     }
 
     override fun onNewToken(token: String) {
         PushTokenRegistrar.saveFcmToken(this, token)
+        PushTokenRegistrar.subscribeToBroadcastTopic()
         PushTokenRegistrar.registerSavedToken(this)
     }
 

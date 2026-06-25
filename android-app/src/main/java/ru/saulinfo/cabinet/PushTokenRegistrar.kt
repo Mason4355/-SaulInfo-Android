@@ -3,6 +3,7 @@ package ru.saulinfo.cabinet
 import android.content.Context
 import android.net.Uri
 import android.provider.Settings
+import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -33,6 +34,16 @@ object PushTokenRegistrar {
         val accessToken = prefs.getString(KEY_ACCESS_TOKEN, "").orEmpty()
         val fcmToken = prefs.getString(KEY_FCM_TOKEN, "").orEmpty()
         register(context, accessToken, fcmToken)
+    }
+
+    fun subscribeToBroadcastTopic() {
+        val topic = BuildConfig.ANDROID_PUSH_TOPIC.trim()
+        if (!topic.matches(Regex("[A-Za-z0-9_.~%-]{1,900}"))) return
+        try {
+            FirebaseMessaging.getInstance().subscribeToTopic(topic)
+        } catch (_: Exception) {
+            // Firebase push is active only when google-services.json is provided for the installation.
+        }
     }
 
     fun register(context: Context, accessToken: String, fcmToken: String) {

@@ -166,6 +166,7 @@ class MainActivity : AppCompatActivity() {
             FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
                 if (!token.isNullOrBlank()) {
                     PushTokenRegistrar.saveFcmToken(this, token)
+                    PushTokenRegistrar.subscribeToBroadcastTopic()
                     PushTokenRegistrar.registerSavedToken(this)
                 }
             }
@@ -387,6 +388,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
                     if (!token.isNullOrBlank()) {
+                        PushTokenRegistrar.subscribeToBroadcastTopic()
                         PushTokenRegistrar.register(this@MainActivity, accessToken, token)
                     }
                 }

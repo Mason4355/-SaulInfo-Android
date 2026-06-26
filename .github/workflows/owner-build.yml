@@ -1,0 +1,113 @@
+name: Build owner APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      owner_slug:
+        description: "Stable owner/build slug, for example owner-cabinet"
+        required: true
+      cabinet_url:
+        description: "Owner cabinet URL"
+        required: true
+      app_name:
+        description: "Android app display name"
+        required: true
+      application_id:
+        description: "Android package name"
+        required: true
+      version_name:
+        description: "User-visible version"
+        required: true
+      version_code:
+        description: "Android versionCode"
+        required: true
+      app_api_key:
+        description: "Owner Android app API key"
+        required: true
+      push_topic:
+        description: "Firebase topic"
+        required: true
+        default: "broadcasts"
+      google_services_json_base64:
+        description: "Base64 encoded google-services.json"
+        required: false
+      release_asset_name:
+        description: "APK asset name"
+        required: true
+        default: "android-app-debug.apk"
+
+jobs:
+  build-owner-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      OWNER_SLUG: ${{ inputs.owner_slug }}
+      CABINET_URL: ${{ inputs.cabinet_url }}
+      ANDROID_APP_NAME: ${{ inputs.app_name }}
+      ANDROID_APPLICATION_ID: ${{ inputs.application_id }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      VERSION_CODE: ${{ inputs.version_code }}
+      ANDROID_APP_API_KEY: ${{ inputs.app_api_key }}
+      ANDROID_PUSH_TOPIC: ${{ inputs.push_topic }}
+      ANDROID_RELEASE_ASSET_NAME: ${{ inputs.release_asset_name }}
+      GOOGLE_SERVICES_JSON_BASE64: ${{ inputs.google_services_json_base64 }}
+      RELEASE_TAG: owner-${{ inputs.owner_slug }}-v${{ inputs.version_name }}
+
+    steps:
+      - name: Checkout system template
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Write google-services.json
+        shell: bash
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android-app/google-services.json
+          else
+            echo "google-services.json is empty; Firebase push will not be included in this build."
+          fi
+
+      - name: Build owner debug APK
+        shell: bash
+        run: |
+          gradle :android-app:assembleDebug \
+            -PcabinetUrl="${CABINET_URL}" \
+            -PandroidAppName="${ANDROID_APP_NAME}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID}" \
+            -PversionCode="${VERSION_CODE}" \
+            -PversionName="${VERSION_NAME}" \
+            -PandroidAppApiKey="${ANDROID_APP_API_KEY}" \
+            -PandroidPushTopic="${ANDROID_PUSH_TOPIC}" \
+            -PandroidReleaseRepo="${GITHUB_REPOSITORY}" \
+            -PandroidReleaseAssetName="${ANDROID_RELEASE_ASSET_NAME}"
+          mkdir -p dist
+          cp android-app/build/outputs/apk/debug/*.apk "dist/${ANDROID_RELEASE_ASSET_NAME}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OWNER_SLUG }}-android-build
+          path: dist/*
+
+      - name: Publish owner Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.ANDROID_APP_NAME }} ${{ env.VERSION_NAME }}
+          body: |
+            versionCode: ${{ env.VERSION_CODE }}
+
+            Owner APK built from the system Android template.
+          files: dist/*
+          make_latest: false

@@ -1,8 +1,9 @@
-name: Android build
+name: Android build and release
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths:
       - "android-app/**"
       - "build.gradle.kts"
@@ -17,18 +18,66 @@ on:
       - "gradle.properties"
       - ".github/workflows/android-build.yml"
   workflow_dispatch:
+    inputs:
+      version_name:
+        description: "User-visible version, for example 1.0.2"
+        required: true
+        default: "1.0.2"
+      version_code:
+        description: "Android versionCode, must grow: 3, 4, 5..."
+        required: true
+        default: "3"
+      create_release:
+        description: "Create or update GitHub Release"
+        required: true
+        type: boolean
+        default: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     env:
+      CABINET_URL: ${{ secrets.CABINET_URL }}
+      ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY }}
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+      GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      SAULINFO_KEYSTORE_PASSWORD: ${{ secrets.SAULINFO_KEYSTORE_PASSWORD }}
+      SAULINFO_KEY_ALIAS: ${{ secrets.SAULINFO_KEY_ALIAS }}
+      SAULINFO_KEY_PASSWORD: ${{ secrets.SAULINFO_KEY_PASSWORD }}
+      ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME || 'SaulInfo' }}
+      ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID || 'ru.saulinfo.cabinet' }}
+      ANDROID_PUSH_TOPIC: ${{ vars.ANDROID_PUSH_TOPIC || 'broadcasts' }}
+      ANDROID_RELEASE_ASSET_NAME: ${{ vars.ANDROID_RELEASE_ASSET_NAME || 'app-debug.apk' }}
       HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION_NAME=${{ inputs.version_name }}" >> "$GITHUB_ENV"
+            echo "VERSION_CODE=${{ inputs.version_code }}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=v${{ inputs.version_name }}" >> "$GITHUB_ENV"
+            echo "CREATE_RELEASE=${{ inputs.create_release }}" >> "$GITHUB_ENV"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME#v}"
+            code="$(echo "$tag" | awk -F. '{ printf "%d", ($1 * 10000) + ($2 * 100) + ($3 ? $3 : 0) }')"
+            echo "VERSION_NAME=$tag" >> "$GITHUB_ENV"
+            echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+            echo "CREATE_RELEASE=true" >> "$GITHUB_ENV"
+          else
+            echo "VERSION_NAME=0.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=" >> "$GITHUB_ENV"
+            echo "CREATE_RELEASE=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -41,55 +90,72 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Write google-services.json
+        shell: bash
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android-app/google-services.json
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android-app/google-services.json
+          else
+            echo "google-services.json secret is empty; Firebase push will not be included in this build."
+          fi
+
       - name: Build debug APK
+        shell: bash
         run: |
           gradle :android-app:assembleDebug \
             -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
-            -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
-            -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}" \
-            -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}"
-        env:
-          CABINET_URL: ${{ secrets.CABINET_URL }}
-          ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY }}
-          ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME }}
-          ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
+            -PandroidAppName="${ANDROID_APP_NAME}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID}" \
+            -PversionCode="${VERSION_CODE}" \
+            -PversionName="${VERSION_NAME}" \
+            -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}" \
+            -PandroidPushTopic="${ANDROID_PUSH_TOPIC}" \
+            -PandroidReleaseRepo="${GITHUB_REPOSITORY}" \
+            -PandroidReleaseAssetName="${ANDROID_RELEASE_ASSET_NAME}"
+          mkdir -p dist
+          cp android-app/build/outputs/apk/debug/*.apk "dist/${ANDROID_RELEASE_ASSET_NAME}"
 
       - name: Prepare release keystore
         if: env.HAS_RELEASE_KEY == 'true'
+        shell: bash
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/saulinfo-release.jks"
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
       - name: Build release APK and AAB
         if: env.HAS_RELEASE_KEY == 'true'
+        shell: bash
         run: |
           gradle :android-app:assembleRelease :android-app:bundleRelease \
             -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
-            -PandroidAppName="${ANDROID_APP_NAME:-SaulInfo}" \
-            -PandroidApplicationId="${ANDROID_APPLICATION_ID:-ru.saulinfo.cabinet}" \
+            -PandroidAppName="${ANDROID_APP_NAME}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID}" \
+            -PversionCode="${VERSION_CODE}" \
+            -PversionName="${VERSION_NAME}" \
             -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}" \
+            -PandroidPushTopic="${ANDROID_PUSH_TOPIC}" \
+            -PandroidReleaseRepo="${GITHUB_REPOSITORY}" \
+            -PandroidReleaseAssetName="${ANDROID_RELEASE_ASSET_NAME}" \
             -PSAULINFO_KEYSTORE_FILE="$RUNNER_TEMP/saulinfo-release.jks"
-        env:
-          CABINET_URL: ${{ secrets.CABINET_URL }}
-          ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY }}
-          ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME }}
-          ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID }}
-          SAULINFO_KEYSTORE_PASSWORD: ${{ secrets.SAULINFO_KEYSTORE_PASSWORD }}
-          SAULINFO_KEY_ALIAS: ${{ secrets.SAULINFO_KEY_ALIAS }}
-          SAULINFO_KEY_PASSWORD: ${{ secrets.SAULINFO_KEY_PASSWORD }}
+          cp android-app/build/outputs/apk/release/*.apk dist/ 2>/dev/null || true
+          cp android-app/build/outputs/bundle/release/*.aab dist/ 2>/dev/null || true
 
-      - name: Upload debug APK
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-debug-apk
-          path: android-app/build/outputs/apk/debug/*.apk
+          name: android-build
+          path: dist/*
 
-      - name: Upload release artifacts
-        if: env.HAS_RELEASE_KEY == 'true'
-        uses: actions/upload-artifact@v4
+      - name: Create or update GitHub Release
+        if: env.CREATE_RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          name: android-release
-          path: |
-            android-app/build/outputs/apk/release/*.apk
-            android-app/build/outputs/bundle/release/*.aab
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.ANDROID_APP_NAME }} ${{ env.VERSION_NAME }}
+          body: |
+            versionCode: ${{ env.VERSION_CODE }}
+
+            Android APK built automatically by GitHub Actions.
+          files: dist/*
+          make_latest: true

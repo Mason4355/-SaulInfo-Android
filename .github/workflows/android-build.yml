@@ -39,7 +39,7 @@ jobs:
     permissions:
       contents: write
     env:
-      CABINET_URL: ${{ secrets.CABINET_URL }}
+      CABINET_URL: ${{ secrets.CABINET_URL || vars.CABINET_URL }}
       ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY }}
       GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
       GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}

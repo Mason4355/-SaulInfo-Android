@@ -1,0 +1,148 @@
+name: Update from upstream and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: "Template repository to pull updates from, for example Mason4355/-SaulInfo-Android"
+        required: true
+        default: "Mason4355/-SaulInfo-Android"
+      upstream_branch:
+        description: "Upstream branch"
+        required: true
+        default: "main"
+      version_name:
+        description: "User-visible version, for example 1.0.3"
+        required: true
+        default: "1.0.3"
+      version_code:
+        description: "Android versionCode, must grow: 4, 5..."
+        required: true
+        default: "4"
+      create_release:
+        description: "Create or update GitHub Release"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  update-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CABINET_URL: ${{ secrets.CABINET_URL || vars.CABINET_URL }}
+      ANDROID_APP_API_KEY: ${{ secrets.ANDROID_APP_API_KEY || '' }}
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+      GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      SAULINFO_KEYSTORE_PASSWORD: ${{ secrets.SAULINFO_KEYSTORE_PASSWORD }}
+      SAULINFO_KEY_ALIAS: ${{ secrets.SAULINFO_KEY_ALIAS }}
+      SAULINFO_KEY_PASSWORD: ${{ secrets.SAULINFO_KEY_PASSWORD }}
+      ANDROID_APP_NAME: ${{ secrets.ANDROID_APP_NAME || vars.ANDROID_APP_NAME || 'Android Cabinet' }}
+      ANDROID_APPLICATION_ID: ${{ secrets.ANDROID_APPLICATION_ID || vars.ANDROID_APPLICATION_ID || 'ru.saulinfo.cabinet' }}
+      ANDROID_PUSH_TOPIC: ${{ secrets.ANDROID_PUSH_TOPIC || vars.ANDROID_PUSH_TOPIC || 'broadcasts' }}
+      ANDROID_RELEASE_ASSET_NAME: ${{ secrets.ANDROID_RELEASE_ASSET_NAME || vars.ANDROID_RELEASE_ASSET_NAME || 'android-app-debug.apk' }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      VERSION_CODE: ${{ inputs.version_code }}
+      RELEASE_TAG: v${{ inputs.version_name }}
+      CREATE_RELEASE: ${{ inputs.create_release }}
+      HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+
+    steps:
+      - name: Checkout owner fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pull code from upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${{ inputs.upstream_repository }}.git"
+          git fetch upstream "${{ inputs.upstream_branch }}"
+          git merge --no-edit "upstream/${{ inputs.upstream_branch }}"
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Write google-services.json
+        shell: bash
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android-app/google-services.json
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android-app/google-services.json
+          else
+            echo "google-services.json secret is empty; Firebase push will not be included in this build."
+          fi
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          gradle :android-app:assembleDebug \
+            -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
+            -PandroidAppName="${ANDROID_APP_NAME}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID}" \
+            -PversionCode="${VERSION_CODE}" \
+            -PversionName="${VERSION_NAME}" \
+            -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}" \
+            -PandroidPushTopic="${ANDROID_PUSH_TOPIC}" \
+            -PandroidReleaseRepo="${GITHUB_REPOSITORY}" \
+            -PandroidReleaseAssetName="${ANDROID_RELEASE_ASSET_NAME}"
+          mkdir -p dist
+          cp android-app/build/outputs/apk/debug/*.apk "dist/${ANDROID_RELEASE_ASSET_NAME}"
+
+      - name: Prepare release keystore
+        if: env.HAS_RELEASE_KEY == 'true'
+        shell: bash
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/saulinfo-release.jks"
+
+      - name: Build release APK and AAB
+        if: env.HAS_RELEASE_KEY == 'true'
+        shell: bash
+        run: |
+          gradle :android-app:assembleRelease :android-app:bundleRelease \
+            -PcabinetUrl="${CABINET_URL:-https://example.com/}" \
+            -PandroidAppName="${ANDROID_APP_NAME}" \
+            -PandroidApplicationId="${ANDROID_APPLICATION_ID}" \
+            -PversionCode="${VERSION_CODE}" \
+            -PversionName="${VERSION_NAME}" \
+            -PandroidAppApiKey="${ANDROID_APP_API_KEY:-}" \
+            -PandroidPushTopic="${ANDROID_PUSH_TOPIC}" \
+            -PandroidReleaseRepo="${GITHUB_REPOSITORY}" \
+            -PandroidReleaseAssetName="${ANDROID_RELEASE_ASSET_NAME}" \
+            -PSAULINFO_KEYSTORE_FILE="$RUNNER_TEMP/saulinfo-release.jks"
+          cp android-app/build/outputs/apk/release/*.apk dist/ 2>/dev/null || true
+          cp android-app/build/outputs/bundle/release/*.aab dist/ 2>/dev/null || true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: dist/*
+
+      - name: Create or update GitHub Release
+        if: env.CREATE_RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Android ${{ env.VERSION_NAME }}
+          body: |
+            versionCode: ${{ env.VERSION_CODE }}
+
+            Android APK built from owner fork after pulling upstream updates.
+          files: dist/*
+          make_latest: true

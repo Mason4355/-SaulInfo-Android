@@ -3,12 +3,14 @@ package ru.saulinfo.cabinet
 import android.content.Context
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
 object PushTokenRegistrar {
+    private const val TAG = "SaulInfoPush"
     private const val PREFS = "saulinfo_push"
     private const val KEY_ACCESS_TOKEN = "access_token"
     private const val KEY_FCM_TOKEN = "fcm_token"
@@ -40,7 +42,13 @@ object PushTokenRegistrar {
         val topic = BuildConfig.ANDROID_PUSH_TOPIC.trim()
         if (!topic.matches(Regex("[A-Za-z0-9_.~%-]{1,900}"))) return
         try {
-            FirebaseMessaging.getInstance().subscribeToTopic(topic)
+            FirebaseMessaging.getInstance().subscribeToTopic(topic).addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Log.i(TAG, "Subscribed to FCM topic: $topic")
+                } else {
+                    Log.w(TAG, "FCM topic subscription failed: $topic", task.exception)
+                }
+            }
         } catch (_: Exception) {
             // Firebase push is active only when google-services.json is provided for the installation.
         }
@@ -73,9 +81,17 @@ object PushTokenRegistrar {
                     )
                     .toString()
                 connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-                connection.inputStream.close()
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    Log.i(TAG, "FCM token registered in backend")
+                    connection.inputStream.close()
+                } else {
+                    Log.w(TAG, "Backend token registration failed: HTTP $code")
+                    connection.errorStream?.close()
+                }
                 connection.disconnect()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w(TAG, "Backend token registration failed", e)
                 // Token registration is retried on next page load or token refresh.
             }
         }.start()

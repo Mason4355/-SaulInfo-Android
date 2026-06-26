@@ -50,7 +50,7 @@ jobs:
       ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME || 'SaulInfo' }}
       ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID || 'ru.saulinfo.cabinet' }}
       ANDROID_PUSH_TOPIC: ${{ vars.ANDROID_PUSH_TOPIC || 'broadcasts' }}
-      ANDROID_RELEASE_ASSET_NAME: ${{ vars.ANDROID_RELEASE_ASSET_NAME || 'app-debug.apk' }}
+      ANDROID_RELEASE_ASSET_NAME: ${{ vars.ANDROID_RELEASE_ASSET_NAME || 'android-app-debug.apk' }}
       HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
 
     steps:
@@ -152,7 +152,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.ANDROID_APP_NAME }} ${{ env.VERSION_NAME }}
+          name: Android ${{ env.VERSION_NAME }}
           body: |
             versionCode: ${{ env.VERSION_CODE }}
 

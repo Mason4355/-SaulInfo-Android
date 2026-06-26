@@ -40,7 +40,7 @@ fun secretValue(name: String): String? {
 }
 
 val appId = configValue("androidApplicationId", "ru.saulinfo.cabinet")
-val appName = configValue("androidAppName", "SaulInfo")
+val appName = configValue("androidAppName", "Android Cabinet")
 val cabinetUrl = configValue("cabinetUrl", "https://example.com/")
 val androidAppApiKey = configValue("androidAppApiKey", "")
 val androidPushTopic = configValue("androidPushTopic", "broadcasts")

@@ -51,13 +51,8 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
-import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
-    private companion object {
-        private const val APP_PAIRING_PREFS = "saulinfo_app_pairing"
-        private const val KEY_RUNTIME_API_KEY = "runtime_api_key"
-    }
     private lateinit var webView: WebView
     private lateinit var progress: ProgressBar
     private lateinit var errorView: View
@@ -68,7 +63,6 @@ class MainActivity : AppCompatActivity() {
     private val startUrl: Uri by lazy { Uri.parse(normalizeUrl(BuildConfig.CABINET_URL)) }
     private val allowedHost: String by lazy { startUrl.host.orEmpty().lowercase(Locale.US) }
     private var updateDialogShown = false
-    private var pairingStarted = false
     private var updateDownloadId = -1L
     private var updateReceiverRegistered = false
     private val updateDownloadReceiver = object : BroadcastReceiver() {
@@ -116,8 +110,9 @@ class MainActivity : AppCompatActivity() {
         NotificationChannels.ensure(this)
         ensureNotificationsEnabled()
         fetchFcmToken()
-        ensureAppPairing()
-        checkGitHubUpdate()
+        if (currentAppApiKey().isNotBlank()) {
+            checkGitHubUpdate()
+        }
 
         if (savedInstanceState == null) {
             reloadCabinet()
@@ -257,111 +252,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun currentAppApiKey(): String {
-        val stored = getSharedPreferences(APP_PAIRING_PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_RUNTIME_API_KEY, "")
-            .orEmpty()
-            .trim()
-        return stored.ifBlank { BuildConfig.ANDROID_APP_API_KEY.trim() }
-    }
-
-    private fun saveRuntimeApiKey(apiKey: String) {
-        if (apiKey.isBlank()) return
-        getSharedPreferences(APP_PAIRING_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_RUNTIME_API_KEY, apiKey)
-            .apply()
-    }
-
-    private fun appInstanceId(): String {
-        return Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
-            .ifBlank { packageName }
-    }
-
-    private fun ensureAppPairing() {
-        if (currentAppApiKey().isNotBlank() || pairingStarted) return
-        pairingStarted = true
-        thread(name = "SaulInfoPairingStart") {
-            try {
-                val url = startUrl.buildUpon().path("/api/cabinet/mobile/pairing/start").build().toString()
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.connectTimeout = 8_000
-                connection.readTimeout = 8_000
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
-                val payload = JSONObject()
-                    .put("app_instance_id", appInstanceId())
-                    .put("package_name", packageName)
-                    .toString()
-                connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-                if (connection.responseCode in 200..299) {
-                    val body = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(body)
-                    val pin = json.optString("pin").filter { it.isDigit() }
-                    if (pin.length == 6) {
-                        runOnUiThread { showPairingPinDialog(pin) }
-                        pollPairingStatus(pin)
-                    }
-                }
-                connection.disconnect()
-            } catch (_: Exception) {
-                pairingStarted = false
-            }
-        }
-    }
-
-    private fun showPairingPinDialog(pin: String) {
-        if (isFinishing || currentAppApiKey().isNotBlank()) return
-        AlertDialog.Builder(this)
-            .setTitle("PIN-привязка")
-            .setMessage("Введите этот PIN в админ-панели, чтобы приложение получило API-ключ:\n\n$pin")
-            .setPositiveButton("Проверить") { _, _ -> pollPairingStatus(pin) }
-            .setNegativeButton("Позже", null)
-            .show()
-    }
-
-    private fun pollPairingStatus(pin: String) {
-        thread(name = "SaulInfoPairingStatus") {
-            repeat(60) {
-                if (currentAppApiKey().isNotBlank()) return@thread
-                try {
-                    val url = startUrl.buildUpon()
-                        .path("/api/cabinet/mobile/pairing/status")
-                        .appendQueryParameter("pin", pin)
-                        .appendQueryParameter("app_instance_id", appInstanceId())
-                        .build()
-                        .toString()
-                    val connection = URL(url).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 8_000
-                    connection.readTimeout = 8_000
-                    connection.requestMethod = "GET"
-                    if (connection.responseCode in 200..299) {
-                        val body = connection.inputStream.bufferedReader().use { it.readText() }
-                        val json = JSONObject(body)
-                        if (json.optString("status") == "approved") {
-                            val apiKey = json.optString("api_key").trim()
-                            if (apiKey.isNotBlank()) {
-                                saveRuntimeApiKey(apiKey)
-                                runOnUiThread {
-                                    updateTitleFromApi()
-                                    AlertDialog.Builder(this)
-                                        .setTitle("Приложение привязано")
-                                        .setMessage("API-ключ получен и сохранён.")
-                                        .setPositiveButton(android.R.string.ok, null)
-                                        .show()
-                                }
-                                return@thread
-                            }
-                        }
-                    }
-                    connection.disconnect()
-                } catch (_: Exception) {
-                    // Retry while the PIN is alive.
-                }
-                Thread.sleep(5_000)
-            }
-            pairingStarted = false
-        }
+        return BuildConfig.ANDROID_APP_API_KEY.trim()
     }
 
     private fun fetchFcmToken() {

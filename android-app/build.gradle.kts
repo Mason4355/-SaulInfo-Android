@@ -44,6 +44,8 @@ val appName = configValue("androidAppName", "SaulInfo")
 val cabinetUrl = configValue("cabinetUrl", "https://example.com/")
 val androidAppApiKey = configValue("androidAppApiKey", "")
 val androidPushTopic = configValue("androidPushTopic", "broadcasts")
+val androidReleaseRepo = configValue("androidReleaseRepo", "Mason4355/-SaulInfo-Android")
+val androidReleaseAssetName = configValue("androidReleaseAssetName", "AccountHub-firebase-debug.apk")
 val allowDomainChange = configValue("allowDomainChange", "false").toBooleanStrictOrNull() ?: false
 val debugWebView = configValue("debugWebView", "true").toBooleanStrictOrNull() ?: true
 val debugApplicationIdSuffix = configValue("debugApplicationIdSuffix", "")
@@ -76,6 +78,8 @@ android {
         buildConfigField("String", "APP_DISPLAY_NAME", buildConfigString(appName))
         buildConfigField("String", "ANDROID_APP_API_KEY", buildConfigString(androidAppApiKey))
         buildConfigField("String", "ANDROID_PUSH_TOPIC", buildConfigString(androidPushTopic))
+        buildConfigField("String", "ANDROID_RELEASE_REPO", buildConfigString(androidReleaseRepo))
+        buildConfigField("String", "ANDROID_RELEASE_ASSET_NAME", buildConfigString(androidReleaseAssetName))
         buildConfigField("Boolean", "ALLOW_DOMAIN_CHANGE", allowDomainChange.toString())
         resValue("string", "app_name", resString(appName))
     }

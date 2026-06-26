@@ -38,6 +38,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.webkit.WebSettingsCompat
@@ -94,8 +95,9 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         configureBackButton()
         NotificationChannels.ensure(this)
-        requestNotificationPermission()
+        ensureNotificationsEnabled()
         fetchFcmToken()
+        checkGitHubUpdate()
 
         if (savedInstanceState == null) {
             reloadCabinet()
@@ -113,6 +115,11 @@ class MainActivity : AppCompatActivity() {
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView.postDelayed({ ensureNotificationsEnabled() }, 800)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -162,7 +169,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            showNotificationSettingsDialog()
+            return
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
             return
         }
@@ -182,8 +192,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensureNotificationsEnabled() {
+        if (NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+        requestNotificationPermission()
+    }
+
     private fun showNotificationSettingsDialog() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || notificationSettingsDialogShown || isFinishing) return
+        if (notificationSettingsDialogShown || isFinishing) return
         notificationSettingsDialogShown = true
         AlertDialog.Builder(this)
             .setTitle("Уведомления выключены")
@@ -492,6 +507,77 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { title = BuildConfig.APP_DISPLAY_NAME }
             }
         }.start()
+    }
+
+    private fun checkGitHubUpdate() {
+        val repo = BuildConfig.ANDROID_RELEASE_REPO.trim().trim('/')
+        if (!repo.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) return
+        Thread {
+            try {
+                val connection = URL("https://api.github.com/repos/$repo/releases/latest").openConnection() as HttpURLConnection
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Accept", "application/vnd.github+json")
+                connection.setRequestProperty("User-Agent", "SaulInfo-Android-Updater")
+                if (connection.responseCode in 200..299) {
+                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    val release = JSONObject(body)
+                    val latestVersionCode = releaseVersionCode(release)
+                    val latestVersionName = release.optString("tag_name").trim().trimStart('v', 'V').takeIf { it.isNotBlank() }
+                        ?: release.optString("name").trim().takeIf { it.isNotBlank() }
+                    val notes = release.optString("body").trim().takeIf { it.isNotBlank() }
+                    val apkUrl = releaseApkUrl(release)
+                    if (latestVersionCode > BuildConfig.VERSION_CODE && apkUrl != null) {
+                        runOnUiThread {
+                            showAppUpdateDialog(latestVersionName, notes, apkUrl, false)
+                        }
+                    }
+                }
+                connection.disconnect()
+            } catch (_: Exception) {
+                // Update checks are best-effort; the cabinet itself must continue to open.
+            }
+        }.start()
+    }
+
+    private fun releaseVersionCode(release: JSONObject): Int {
+        val text = listOf(
+            release.optString("tag_name"),
+            release.optString("name"),
+            release.optString("body"),
+        ).joinToString("\n")
+        Regex("""(?i)(?:versionCode|version_code|version-code)\s*[:=]\s*(\d+)""")
+            .find(text)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.let { return it.coerceAtLeast(1) }
+        val tag = release.optString("tag_name").trim().trimStart('v', 'V')
+        tag.toIntOrNull()?.let { return it.coerceAtLeast(1) }
+        val semver = Regex("""(\d+)\.(\d+)(?:\.(\d+))?""").find(tag)
+        if (semver != null) {
+            val major = semver.groupValues.getOrNull(1)?.toIntOrNull() ?: 0
+            val minor = semver.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
+            val patch = semver.groupValues.getOrNull(3)?.toIntOrNull() ?: 0
+            return (major * 10_000 + minor * 100 + patch).coerceAtLeast(1)
+        }
+        return BuildConfig.VERSION_CODE
+    }
+
+    private fun releaseApkUrl(release: JSONObject): String? {
+        val assets = release.optJSONArray("assets") ?: return null
+        val preferredName = BuildConfig.ANDROID_RELEASE_ASSET_NAME.trim()
+        var fallback: String? = null
+        for (index in 0 until assets.length()) {
+            val asset = assets.optJSONObject(index) ?: continue
+            val name = asset.optString("name").trim()
+            val url = asset.optString("browser_download_url").trim()
+            if (!url.startsWith("https://")) continue
+            if (preferredName.isNotBlank() && name == preferredName) return url
+            if (fallback == null && name.lowercase(Locale.US).endsWith(".apk")) fallback = url
+        }
+        return fallback
     }
 
     private fun showAppUpdateDialog(

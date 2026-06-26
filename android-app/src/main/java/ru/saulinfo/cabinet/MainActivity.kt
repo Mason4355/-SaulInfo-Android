@@ -488,11 +488,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateTitleFromApi() {
-        val apiUrl = if (appApiKey.isNotBlank()) {
-            startUrl.buildUpon().path("/api/cabinet/mobile/config").build().toString()
-        } else {
-            startUrl.buildUpon().path("/api/cabinet/branding").build().toString()
-        }
+        val apiUrl = startUrl.buildUpon().path("/api/cabinet/mobile/config").build().toString()
         Thread {
             try {
                 val connection = URL(apiUrl).openConnection() as HttpURLConnection
@@ -505,22 +501,16 @@ class MainActivity : AppCompatActivity() {
                 if (connection.responseCode in 200..299) {
                     val body = connection.inputStream.bufferedReader().use { it.readText() }
                     val json = JSONObject(body)
-                    val name = if (appApiKey.isNotBlank()) {
-                        json.optString("app_name").takeIf { it.isNotBlank() }
-                            ?: json.optJSONObject("branding")?.optString("name")?.takeIf { it.isNotBlank() }
-                    } else {
-                        json.optString("name").takeIf { it.isNotBlank() }
-                    }
-                    if (appApiKey.isNotBlank()) {
-                        val latestVersionCode = json.optInt("latest_version_code", BuildConfig.VERSION_CODE)
-                        val latestVersionName = json.optString("latest_version_name").takeIf { it.isNotBlank() }
-                        val apkUrl = json.optString("apk_url").takeIf { it.startsWith("https://") }
-                        val updateRequired = json.optBoolean("update_required", false)
-                        val updateNotes = json.optString("update_notes").takeIf { it.isNotBlank() }
-                        if (latestVersionCode > BuildConfig.VERSION_CODE && apkUrl != null) {
-                            runOnUiThread {
-                                showAppUpdateDialog(latestVersionName, updateNotes, apkUrl, updateRequired)
-                            }
+                    val name = json.optString("app_name").takeIf { it.isNotBlank() }
+                        ?: json.optJSONObject("branding")?.optString("name")?.takeIf { it.isNotBlank() }
+                    val latestVersionCode = json.optInt("latest_version_code", BuildConfig.VERSION_CODE)
+                    val latestVersionName = json.optString("latest_version_name").takeIf { it.isNotBlank() }
+                    val apkUrl = json.optString("apk_url").takeIf { it.startsWith("https://") }
+                    val updateRequired = json.optBoolean("update_required", false)
+                    val updateNotes = json.optString("update_notes").takeIf { it.isNotBlank() }
+                    if (latestVersionCode > BuildConfig.VERSION_CODE && apkUrl != null) {
+                        runOnUiThread {
+                            showAppUpdateDialog(latestVersionName, updateNotes, apkUrl, updateRequired)
                         }
                     }
                     if (name != null) {

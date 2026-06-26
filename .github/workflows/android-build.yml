@@ -47,10 +47,10 @@ jobs:
       SAULINFO_KEYSTORE_PASSWORD: ${{ secrets.SAULINFO_KEYSTORE_PASSWORD }}
       SAULINFO_KEY_ALIAS: ${{ secrets.SAULINFO_KEY_ALIAS }}
       SAULINFO_KEY_PASSWORD: ${{ secrets.SAULINFO_KEY_PASSWORD }}
-      ANDROID_APP_NAME: ${{ vars.ANDROID_APP_NAME || 'Android Cabinet' }}
-      ANDROID_APPLICATION_ID: ${{ vars.ANDROID_APPLICATION_ID || 'ru.saulinfo.cabinet' }}
-      ANDROID_PUSH_TOPIC: ${{ vars.ANDROID_PUSH_TOPIC || 'broadcasts' }}
-      ANDROID_RELEASE_ASSET_NAME: ${{ vars.ANDROID_RELEASE_ASSET_NAME || 'android-app-debug.apk' }}
+      ANDROID_APP_NAME: ${{ secrets.ANDROID_APP_NAME || vars.ANDROID_APP_NAME || 'Android Cabinet' }}
+      ANDROID_APPLICATION_ID: ${{ secrets.ANDROID_APPLICATION_ID || vars.ANDROID_APPLICATION_ID || 'ru.saulinfo.cabinet' }}
+      ANDROID_PUSH_TOPIC: ${{ secrets.ANDROID_PUSH_TOPIC || vars.ANDROID_PUSH_TOPIC || 'broadcasts' }}
+      ANDROID_RELEASE_ASSET_NAME: ${{ secrets.ANDROID_RELEASE_ASSET_NAME || vars.ANDROID_RELEASE_ASSET_NAME || 'android-app-debug.apk' }}
       HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
 
     steps:

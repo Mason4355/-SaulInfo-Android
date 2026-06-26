@@ -4,8 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
@@ -62,6 +64,17 @@ class MainActivity : AppCompatActivity() {
     private val allowedHost: String by lazy { startUrl.host.orEmpty().lowercase(Locale.US) }
     private val appApiKey: String by lazy { BuildConfig.ANDROID_APP_API_KEY.trim() }
     private var updateDialogShown = false
+    private var updateDownloadId = -1L
+    private var updateReceiverRegistered = false
+    private val updateDownloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id == updateDownloadId) {
+                openDownloadedUpdate(id)
+            }
+        }
+    }
 
     private val filePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
@@ -94,6 +107,7 @@ class MainActivity : AppCompatActivity() {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.WEBVIEW_DEBUGGING)
         configureWebView()
         configureBackButton()
+        registerUpdateDownloadReceiver()
         NotificationChannels.ensure(this)
         ensureNotificationsEnabled()
         fetchFcmToken()
@@ -114,6 +128,10 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
+        if (updateReceiverRegistered) {
+            unregisterReceiver(updateDownloadReceiver)
+            updateReceiverRegistered = false
+        }
         super.onDestroy()
     }
 
@@ -166,6 +184,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun registerUpdateDownloadReceiver() {
+        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(updateDownloadReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(updateDownloadReceiver, filter)
+        }
+        updateReceiverRegistered = true
     }
 
     private fun requestNotificationPermission() {
@@ -620,6 +648,28 @@ class MainActivity : AppCompatActivity() {
                 Environment.DIRECTORY_DOWNLOADS,
                 URLUtil.guessFileName(apkUrl, null, "application/vnd.android.package-archive"),
             )
-        (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+        updateDownloadId = (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+    }
+
+    private fun openDownloadedUpdate(downloadId: Long) {
+        val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val uri = manager.getUriForDownloadedFile(downloadId) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            } catch (_: ActivityNotFoundException) {
+                startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+            }
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            openExternal(uri)
+        }
     }
 }
